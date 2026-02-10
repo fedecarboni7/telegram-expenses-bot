@@ -27,6 +27,12 @@ Analiza el siguiente mensaje para extraer información financiera.
 - **cuenta_destino**: (solo transferencias)
 - **fecha**: formato dd/MM/yyyy
 - **cuotas**: número de cuotas (opcional: solo si se menciona)
+- **moneda**: "ARS" o "USD"
+
+### REGLAS DE MONEDA:
+- Por defecto siempre usar "ARS" (pesos argentinos)
+- Solo usar "USD" si el usuario menciona explícitamente dólares, USD, dólar, usd, dolares, o similar
+- Si no se menciona moneda → usar "ARS"
 
 ### REGLAS DE FECHA:
 - Si no se menciona fecha, poner la fecha actual: ${currentDateString}.
@@ -141,6 +147,12 @@ Analiza el mensaje de voz para extraer información de registro financiero.
 - **cuenta_destino**: (solo transferencias)
 - **fecha**: formato dd/MM/yyyy
 - **cuotas**: número de cuotas (opcional: solo si se menciona)
+- **moneda**: "ARS" o "USD"
+
+### REGLAS DE MONEDA:
+- Por defecto siempre usar "ARS" (pesos argentinos)
+- Solo usar "USD" si el usuario menciona explícitamente dólares, USD, dólar, usd, dolares, o similar
+- Si no se menciona moneda → usar "ARS"
 
 ### REGLAS DE FECHA:
 - Si no se menciona fecha, poner la fecha actual: ${currentDateString}.

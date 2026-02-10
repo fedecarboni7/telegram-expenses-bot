@@ -1,4 +1,25 @@
 /**
+ * Obtiene la cotización actual del dólar (USD a ARS)
+ * @return {number} Cotización del dólar blue
+ */
+function getUsdToArsRate() {
+  try {
+    const response = UrlFetchApp.fetch('https://dolarapi.com/v1/dolares/blue', { muteHttpExceptions: true });
+    if (response.getResponseCode() !== 200) {
+      throw new Error(`Error al obtener cotización del dólar: HTTP ${response.getResponseCode()} - ${response.getContentText()}`);
+    }
+    const data = JSON.parse(response.getContentText());
+    if (!data.venta || isNaN(data.venta) || data.venta <= 0) {
+      throw new Error(`Cotización del dólar inválida: ${JSON.stringify(data)}`);
+    }
+    return data.venta;
+  } catch (error) {
+    logError('getUsdToArsRate', error);
+    throw error;
+  }
+}
+
+/**
  * Registra datos estructurados en la hoja de gastos
  * @param {Object} data - Datos estructurados del gasto
  * @param {number} timestamp - Marca de tiempo Unix
@@ -25,16 +46,20 @@ function logToExpenseSheet(data, timestamp) {
                       data.tipo === 'ingreso' ? 'Ingresos' : 
                       'Transferencias';
 
+    // Determinar la moneda y obtener cotización si es necesario
+    const currency = data.moneda === 'USD' ? 'USD' : 'ARS';
+    const usdRate = currency === 'USD' ? getUsdToArsRate() : null;
+
     // Manejar según el tipo de registro
     if (data.tipo === 'transferencia') {
       // Transferencia: crear dos registros
-      createTransferRecords(sheet, data, baseDate, recordType);
+      createTransferRecords(sheet, data, baseDate, recordType, currency, usdRate);
     } else if (data.tipo === 'gasto' && data.cuotas && data.cuotas > 1) {
       // Gasto con cuotas: crear un registro por cuota
-      createInstallmentRecords(sheet, data, baseDate, recordType);
+      createInstallmentRecords(sheet, data, baseDate, recordType, currency, usdRate);
     } else {
       // Registro simple: gasto sin cuotas o ingreso
-      createSimpleRecord(sheet, data, baseDate, recordType);
+      createSimpleRecord(sheet, data, baseDate, recordType, currency, usdRate);
     }
 
     // Ordenar la hoja por la fecha (columna 1) en orden descendente
@@ -53,23 +78,28 @@ function logToExpenseSheet(data, timestamp) {
  * @param {Object} data - Datos del registro
  * @param {Date} baseDate - Fecha base del registro
  * @param {string} recordType - Tipo de registro
+ * @param {string} currency - Moneda del registro ("ARS" o "USD")
+ * @param {number|null} usdRate - Cotización del dólar (null si es ARS)
  */
-function createTransferRecords(sheet, data, baseDate, recordType) {
+function createTransferRecords(sheet, data, baseDate, recordType, currency, usdRate) {
   const formattedDate = Utilities.formatDate(baseDate, Session.getScriptTimeZone(), "dd/MM/yyyy");
   const amount = Math.abs(data.monto);
+  
+  // Si es en USD, convertir a pesos para la columna H
+  const amountInArs = currency === 'USD' ? amount * usdRate : amount;
   
   // Registro negativo para cuenta origen
   const lastRow1 = sheet.getLastRow() + 1;
   sheet.getRange(lastRow1, 1, 1, 10).setValues([
     [formattedDate, -amount, data.cuenta, "", "", 
-     `Transferencia a ${data.cuenta_destino}`, "", -amount, recordType, "ARS"]
+     `Transferencia a ${data.cuenta_destino}`, "", -amountInArs, recordType, currency]
   ]);
   
   // Registro positivo para cuenta destino
   const lastRow2 = sheet.getLastRow() + 1;
   sheet.getRange(lastRow2, 1, 1, 10).setValues([
     [formattedDate, amount, data.cuenta_destino, "", "", 
-     `Transferencia de ${data.cuenta}`, "", amount, recordType, "ARS"]
+     `Transferencia de ${data.cuenta}`, "", amountInArs, recordType, currency]
   ]);
 }
 
@@ -79,11 +109,16 @@ function createTransferRecords(sheet, data, baseDate, recordType) {
  * @param {Object} data - Datos del registro
  * @param {Date} baseDate - Fecha base del registro
  * @param {string} recordType - Tipo de registro
+ * @param {string} currency - Moneda del registro ("ARS" o "USD")
+ * @param {number|null} usdRate - Cotización del dólar (null si es ARS)
  */
-function createInstallmentRecords(sheet, data, baseDate, recordType) {
+function createInstallmentRecords(sheet, data, baseDate, recordType, currency, usdRate) {
   const totalAmount = Math.abs(data.monto);
   const installments = parseInt(data.cuotas);
   const monthlyAmount = totalAmount / installments;
+  
+  // Si es en USD, convertir a pesos para la columna H
+  const monthlyAmountInArs = currency === 'USD' ? monthlyAmount * usdRate : monthlyAmount;
   
   // Crear un registro por cada cuota
   for (let i = 0; i < installments; i++) {
@@ -97,7 +132,7 @@ function createInstallmentRecords(sheet, data, baseDate, recordType) {
     const lastRow = sheet.getLastRow() + 1;
     sheet.getRange(lastRow, 1, 1, 10).setValues([
       [formattedDate, -monthlyAmount, data.cuenta, data.categoria, data.subcategoria,
-       description, "", -monthlyAmount, recordType, "ARS"]
+       description, "", -monthlyAmountInArs, recordType, currency]
     ]);
   }
 }
@@ -108,8 +143,10 @@ function createInstallmentRecords(sheet, data, baseDate, recordType) {
  * @param {Object} data - Datos del registro
  * @param {Date} baseDate - Fecha base del registro
  * @param {string} recordType - Tipo de registro
+ * @param {string} currency - Moneda del registro ("ARS" o "USD")
+ * @param {number|null} usdRate - Cotización del dólar (null si es ARS)
  */
-function createSimpleRecord(sheet, data, baseDate, recordType) {
+function createSimpleRecord(sheet, data, baseDate, recordType, currency, usdRate) {
   const formattedDate = Utilities.formatDate(baseDate, Session.getScriptTimeZone(), "dd/MM/yyyy");
   
   // Determinar el signo del monto según el tipo
@@ -119,10 +156,13 @@ function createSimpleRecord(sheet, data, baseDate, recordType) {
   }
   // Los ingresos quedan positivos
   
+  // Si es en USD, convertir a pesos para la columna H
+  const amountInArs = currency === 'USD' ? amount * usdRate : amount;
+  
   const lastRow = sheet.getLastRow() + 1;
   sheet.getRange(lastRow, 1, 1, 10).setValues([
     [formattedDate, amount, data.cuenta, data.categoria, data.subcategoria, 
-     data.descripcion, "", amount, recordType, "ARS"]
+     data.descripcion, "", amountInArs, recordType, currency]
   ]);
 }
 

@@ -149,6 +149,11 @@ function formatExpenseForDisplay(data, dateStr, prefix = null) {
 
   let message = `${prefix}\n🗓️ ${dateStr}\n💰 ${formatCurrency(data.monto)}`;
 
+  // Mostrar moneda si es USD
+  if (data.moneda === 'USD') {
+    message += ` (USD)`;
+  }
+
   // Agregar información específica según el tipo
   if (data.tipo === 'transferencia') {
     message += `\n📤 Origen: ${data.cuenta}`;
@@ -381,6 +386,12 @@ Tienes que actualizar un registro financiero existente. Identifica qué campos q
 - **cuenta_destino**: ${originalData.data.cuenta_destino || 'No especificada'}
 - **fecha**: ${originalData.data.fecha}
 - **cuotas**: ${originalData.data.cuotas || 'No especificado'}
+- **moneda**: ${originalData.data.moneda || 'ARS'}
+
+### REGLAS DE MONEDA:
+- Por defecto siempre usar "ARS" (pesos argentinos)
+- Solo usar "USD" si el usuario menciona explícitamente dólares, USD, dólar, usd, dolares, o similar
+- Si no se menciona moneda → mantener el valor actual
 
 ### REGLAS DE FECHA:
 - Hoy es ${currentDateString}.
@@ -434,6 +445,12 @@ Tienes que actualizar un registro financiero existente. Identifica qué campos q
 - **cuenta_destino**: ${originalData.data.cuenta_destino || 'No especificada'}
 - **fecha**: ${originalData.data.fecha}
 - **cuotas**: ${originalData.data.cuotas || 'No especificado'}
+- **moneda**: ${originalData.data.moneda || 'ARS'}
+
+### REGLAS DE MONEDA:
+- Por defecto siempre usar "ARS" (pesos argentinos)
+- Solo usar "USD" si el usuario menciona explícitamente dólares, USD, dólar, usd, dolares, o similar
+- Si no se menciona moneda → mantener el valor actual
 
 ### REGLAS DE FECHA:
 - Hoy es ${currentDateString}.
