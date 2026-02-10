@@ -1,0 +1,54 @@
+name: Deploy to Google Apps Script
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install clasp
+        run: npm install -g @google/clasp
+
+      - name: Validate required secrets
+        run: |
+          if [ -z "$CLASPRC_JSON" ] || [ -z "$SCRIPT_ID" ] || [ -z "$DEPLOYMENT_ID" ]; then
+            echo "Error: One or more required secrets are not set."
+            echo "Please configure CLASPRC_JSON, SCRIPT_ID, and DEPLOYMENT_ID in repository secrets."
+            exit 1
+          fi
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
+          DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
+
+      - name: Authenticate with Google
+        run: echo "$CLASPRC_JSON" > ~/.clasprc.json
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+
+      - name: Set script ID
+        run: echo "{\"scriptId\":\"${SCRIPT_ID}\",\"rootDir\":\".\"}" > .clasp.json
+        env:
+          SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
+
+      - name: Push to Google Apps Script
+        run: clasp push --force
+
+      - name: Deploy
+        run: clasp deploy --deploymentId "$DEPLOYMENT_ID" --description "Automated deploy from GitHub Actions - $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+        env:
+          DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
