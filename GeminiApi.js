@@ -5,7 +5,7 @@
  * @return {Object} - Structured data
  */
 function processTextWithGemini(text, customPrompt) {
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent';
   const apiKey = CONFIG.GEMINI_API_KEY;
   
   // Obtener la fecha actual para resolver referencias relativas
@@ -108,7 +108,7 @@ Devuelve ÚNICAMENTE un JSON válido con los campos extraídos.`;
 function processAudioWithGemini(audioBlob, mimeType, customPrompt) {
   const apiKey = CONFIG.GEMINI_API_KEY;
   const uploadUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`;
-  const generateUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  const generateUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=${apiKey}`;
 
   // Obtener la fecha actual para resolver referencias relativas
   const today = new Date();
