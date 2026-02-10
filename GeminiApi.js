@@ -211,3 +211,60 @@ Devuelve ÚNICAMENTE un JSON válido con los campos extraídos.`;
   const responseText = json.candidates[0].content.parts[0].text.replace(/```json|```/g, '').trim();
   return JSON.parse(responseText);
 }
+
+/**
+ * Transcribe audio to text using Gemini API
+ * @param {Blob} audioBlob - Audio blob to transcribe
+ * @param {string} mimeType - MIME type of the audio
+ * @param {string} prompt - Prompt for transcription
+ * @return {string|null} - Transcribed text or null
+ */
+function processAudioTranscription(audioBlob, mimeType, prompt) {
+  const apiKey = CONFIG.GEMINI_API_KEY;
+  const uploadUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`;
+  const generateUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=${apiKey}`;
+
+  // Paso 1: Subir el archivo de audio
+  const uploadOptions = {
+    method: 'POST',
+    headers: {
+      'Content-Type': mimeType
+    },
+    payload: audioBlob,
+    muteHttpExceptions: true
+  };
+
+  const uploadResponse = UrlFetchApp.fetch(uploadUrl, uploadOptions);
+  if (uploadResponse.getResponseCode() !== 200) {
+    throw new Error(`Error al subir el audio a Gemini: ${uploadResponse.getContentText()}`);
+  }
+  const uploadResult = JSON.parse(uploadResponse.getContentText());
+  const fileUri = uploadResult.file.uri;
+
+  // Paso 2: Transcribir con Gemini
+  const payload = {
+    "contents": [
+      {
+        "parts": [
+          { "text": prompt },
+          { "fileData": { "mimeType": mimeType, "fileUri": fileUri } }
+        ]
+      }
+    ]
+  };
+
+  const options = {
+    method: 'POST',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+
+  const response = UrlFetchApp.fetch(generateUrl, options);
+  if (response.getResponseCode() !== 200) {
+    return null;
+  }
+
+  const json = JSON.parse(response.getContentText());
+  return json.candidates[0].content.parts[0].text.trim();
+}

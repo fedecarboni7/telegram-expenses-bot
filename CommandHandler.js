@@ -137,7 +137,12 @@ function sendHelpMessage(chatId) {
 /categorias_ingresos - Ver categorías de ingresos
 /subcategorias [categoría] - Ver subcategorías de una categoría
 /cuentas - Ver cuentas disponibles
-/ayuda - Ver esta ayuda`;
+/ayuda - Ver esta ayuda
+
+💡 <b>Editar o borrar registros:</b>
+Respondé a un mensaje de registro confirmado para editarlo o borrarlo.
+• Para <b>borrar</b>: respondé con "borrar", "eliminar", etc.
+• Para <b>editar</b>: respondé indicando qué querés cambiar (ej: "cambiar monto a 5000", "la cuenta es Prex")`;
 
   sendTelegramMessage(chatId, message);
 }

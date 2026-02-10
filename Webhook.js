@@ -53,6 +53,12 @@ function doPost(e) {
       return;
     }
     
+    // Verificar si es un reply a un registro confirmado
+    if (message.reply_to_message && processReplyToRecord(message, chatId)) {
+      Logger.log("Reply to record processed.");
+      return;
+    }
+    
     let structuredData;
     
     // Manejar mensajes de texto
@@ -230,18 +236,29 @@ function handleCallbackQuery(callbackQuery) {
   answerCallbackQuery(callbackQuery.id);
   
   if (callbackData.action === 'confirm') {
-    // Guardar en la hoja de cálculo
-    logToExpenseSheet(savedData.data, savedData.timestamp);
+    // Guardar en la hoja de cálculo con un recordId
+    const recordId = Utilities.getUuid();
+    logToExpenseSheet(savedData.data, savedData.timestamp, recordId);
     
     // Obtener fecha formateada y actualizar el mensaje
     const displayDate = getFormattedDate(savedData.data, savedData.timestamp);
     
-    // Actualizar el mensaje original
+    // Actualizar el mensaje original con el registro confirmado
     editMessageText(
       chatId, 
       messageId, 
-      formatExpenseForDisplay(savedData.data, displayDate)
+      formatExpenseForDisplay(savedData.data, displayDate) +
+      `\n\n<i>💡 Respondé a este mensaje para editarlo o borrarlo.</i>`
     );
+    
+    // Guardar la relación entre messageId y recordId/data para futuros replies
+    const replyData = {
+      recordId: recordId,
+      data: savedData.data,
+      timestamp: savedData.timestamp
+    };
+    const props = PropertiesService.getUserProperties();
+    props.setProperty(`record_msg_${chatId}_${messageId}`, JSON.stringify(replyData));
   } else if (callbackData.action === 'cancel') {
     // Actualizar el mensaje original
     editMessageText(
@@ -509,6 +526,169 @@ Devuelve ÚNICAMENTE un JSON con TODOS los campos (modificados y sin modificar)`
   } catch (error) {
     logError('processEditMessage', error);
     sendTelegramMessage(chatId, "❌ Ocurrió un error procesando tu edición. Por favor intenta de nuevo.");
+    return true;
+  }
+}
+
+/**
+ * Procesa un reply a un mensaje de registro confirmado
+ * @param {Object} message - Mensaje de Telegram (que es un reply)
+ * @param {string} chatId - ID del chat
+ * @return {boolean} True si se procesó como reply a un registro, false en caso contrario
+ */
+function processReplyToRecord(message, chatId) {
+  const repliedMessageId = message.reply_to_message.message_id;
+  const props = PropertiesService.getUserProperties();
+  const recordDataJson = props.getProperty(`record_msg_${chatId}_${repliedMessageId}`);
+  
+  if (!recordDataJson) {
+    return false; // No es un reply a un registro conocido
+  }
+  
+  const recordData = JSON.parse(recordDataJson);
+  
+  try {
+    // Determinar el texto del usuario (texto o voz)
+    let userText = '';
+    if (message.text) {
+      userText = message.text;
+    } else if (message.voice) {
+      const fileId = message.voice.file_id;
+      const audioBlob = getAudioBlob(fileId);
+      // Transcribir el audio con Gemini para obtener el texto
+      const transcribePrompt = `Transcribe el siguiente mensaje de voz a texto. Devuelve ÚNICAMENTE el texto transcrito sin formato adicional.`;
+      const transcription = processAudioTranscription(audioBlob, message.voice.mime_type, transcribePrompt);
+      if (transcription) {
+        userText = transcription;
+      }
+    }
+    
+    if (!userText) {
+      sendTelegramMessage(chatId, "❌ No pude procesar tu mensaje. Enviá un texto o audio indicando qué querés hacer con el registro.");
+      return true;
+    }
+    
+    // Detectar intención: borrar o editar
+    const lowerText = userText.toLowerCase().trim();
+    const deleteKeywords = ['borrar', 'borralo', 'eliminar', 'eliminalo', 'delete', 'quitar', 'sacalo', 'bórralo', 'eliminá', 'borrá'];
+    const isDeleteIntent = deleteKeywords.some(keyword => lowerText.includes(keyword));
+    
+    if (isDeleteIntent) {
+      // Borrar el registro
+      const deleted = deleteRecordsByRecordId(recordData.recordId);
+      if (deleted) {
+        // Actualizar el mensaje original
+        editMessageText(chatId, repliedMessageId, "🗑️ <b>Registro eliminado.</b>");
+        props.deleteProperty(`record_msg_${chatId}_${repliedMessageId}`);
+        sendTelegramMessage(chatId, "✅ Registro eliminado correctamente de la planilla.");
+      } else {
+        sendTelegramMessage(chatId, "❌ No se encontró el registro en la planilla. Es posible que ya haya sido eliminado.");
+      }
+    } else {
+      // Interpretar como edición: usar Gemini para aplicar los cambios
+      const today = new Date();
+      const currentDateString = Utilities.formatDate(today, Session.getScriptTimeZone(), "dd/MM/yyyy");
+      
+      const editPrompt = `
+### TAREA:
+Tienes que actualizar un registro financiero existente. Identifica qué campos quiere modificar el usuario y actualiza ÚNICAMENTE los campos mencionados.
+
+### DATOS ACTUALES DEL REGISTRO:
+- **tipo**: ${recordData.data.tipo}
+- **monto**: ${recordData.data.monto}
+- **descripcion**: ${recordData.data.descripcion}
+- **categoria**: ${recordData.data.categoria}
+- **subcategoria**: ${recordData.data.subcategoria}
+- **cuenta**: ${recordData.data.cuenta}
+- **cuenta_destino**: ${recordData.data.cuenta_destino || 'No especificada'}
+- **fecha**: ${recordData.data.fecha}
+- **cuotas**: ${recordData.data.cuotas || 'No especificado'}
+- **moneda**: ${recordData.data.moneda || 'ARS'}
+
+### REGLAS DE MONEDA:
+- Por defecto siempre usar "ARS" (pesos argentinos)
+- Solo usar "USD" si el usuario menciona explícitamente dólares, USD, dólar, usd, dolares, o similar
+- Si no se menciona moneda → mantener el valor actual
+
+### REGLAS DE FECHA:
+- Hoy es ${currentDateString}.
+- Si menciona "ayer" → calcular fecha anterior
+- Si menciona "el lunes", "hace 3 días", etc. → calcular fecha específica
+
+### REGLAS DE CUOTAS:
+- Si menciona cuotas → actualizar el campo "cuotas"
+- Si no había cuotas especificadas y no se mencionan nuevas → no incluir el campo "cuotas"
+
+### CUENTAS DISPONIBLES:
+${accounts.join(', ')}
+
+### CATEGORÍAS DE GASTOS:
+${Object.entries(expense_categories).map(([cat, subcats]) => 
+  `**${cat}:**\n${subcats.map(subcat => `  - ${subcat.split(' > ')[1]}`).join('\n')}`
+).join('\n\n')}
+
+### CATEGORÍAS DE INGRESOS:
+${Object.entries(income_categories).map(([cat, subcats]) => 
+  `**${cat}:**\n${subcats.map(subcat => `  - ${subcat.split(' > ')[1]}`).join('\n')}`
+).join('\n\n')}
+
+### FORMATO DE SUBCATEGORÍA:
+- La subcategoría debe devolverse en formato "Categoría > Subcategoría"
+- Ejemplo: Si eliges "Nafta" de la categoría "Auto", devuelve "Auto > Nafta"
+
+### INSTRUCCIÓN DEL USUARIO:
+"${userText}"
+
+### RESPUESTA REQUERIDA:
+Devuelve ÚNICAMENTE un JSON con TODOS los campos (modificados y sin modificar)`;
+      
+      const updatedData = processTextWithGemini(userText, editPrompt);
+      
+      if (updatedData) {
+        const validation = validateData(updatedData);
+        if (validation.valid) {
+          // Editar descripción para que comience con mayúscula
+          if (updatedData.descripcion) {
+            updatedData.descripcion = updatedData.descripcion.charAt(0).toUpperCase() + updatedData.descripcion.slice(1);
+          }
+          
+          // Actualizar en la hoja
+          const updated = updateRecordInSheet(recordData.recordId, updatedData, recordData.timestamp);
+          if (updated) {
+            const displayDate = getFormattedDate(updatedData, recordData.timestamp);
+            
+            // Actualizar el mensaje original
+            editMessageText(
+              chatId,
+              repliedMessageId,
+              formatExpenseForDisplay(updatedData, displayDate) +
+              `\n\n<i>💡 Respondé a este mensaje para editarlo o borrarlo.</i>`
+            );
+            
+            // Actualizar los datos en propiedades para futuros edits
+            const newRecordData = {
+              recordId: recordData.recordId,
+              data: updatedData,
+              timestamp: recordData.timestamp
+            };
+            props.setProperty(`record_msg_${chatId}_${repliedMessageId}`, JSON.stringify(newRecordData));
+            
+            sendTelegramMessage(chatId, "✅ Registro actualizado correctamente.");
+          } else {
+            sendTelegramMessage(chatId, "❌ No se encontró el registro en la planilla. Es posible que ya haya sido eliminado.");
+          }
+        } else {
+          sendTelegramMessage(chatId, validation.error || "❌ No pude procesar correctamente tu edición. Por favor intenta nuevamente.");
+        }
+      } else {
+        sendTelegramMessage(chatId, "❌ No pude procesar correctamente tu edición. Por favor intenta nuevamente con información más clara.");
+      }
+    }
+    
+    return true;
+  } catch (error) {
+    logError('processReplyToRecord', error);
+    sendTelegramMessage(chatId, "❌ Ocurrió un error procesando tu solicitud. Por favor intenta de nuevo.");
     return true;
   }
 }
