@@ -120,6 +120,33 @@ Open Telegram and start a chat with your bot. The bot is restricted to your chat
 
 The bot intelligently recognizes different types of financial records and categorizes them automatically based on your message content.
 
+## CI/CD
+
+This project includes a GitHub Actions workflow that automatically deploys changes to Google Apps Script when code is pushed to the `master` branch.
+
+### Setup
+
+1. **Install clasp locally** and log in to get your credentials:
+   ```bash
+   npm install -g @google/clasp
+   clasp login
+   ```
+
+2. After logging in, copy the contents of your `~/.clasprc.json` file.
+
+3. **Get the Deployment ID** by running:
+   ```bash
+   clasp deployments
+   ```
+   Copy the deployment ID you want to update automatically.
+
+4. **Configure GitHub Secrets** in your repository (`Settings > Secrets and variables > Actions`):
+   - `CLASPRC_JSON`: The full contents of your `~/.clasprc.json` file (contains OAuth2 credentials)
+   - `SCRIPT_ID`: Your Google Apps Script project ID (found in `.clasp.json` or in the script URL)
+   - `DEPLOYMENT_ID`: The deployment ID to update on each push
+
+Once configured, every push to `master` will automatically push the code to Google Apps Script and update the deployment.
+
 ## Troubleshooting
 
 - If the bot doesn't respond, check the Bot Errors sheet in your spreadsheet
