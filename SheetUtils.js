@@ -1,3 +1,6 @@
+// Índice de la columna K donde se almacena el ID del registro (base 0)
+const RECORD_ID_COLUMN_INDEX = 10;
+
 /**
  * Obtiene la cotización actual del dólar (USD a ARS)
  * @return {number} Cotización del dólar blue
@@ -193,7 +196,7 @@ function findRowsByRecordId(recordId) {
   
   // Columna K es el índice 10
   for (let i = 0; i < data.length; i++) {
-    if (data[i][10] === recordId) {
+    if (data[i][RECORD_ID_COLUMN_INDEX] === recordId) {
       rows.push(i + 1); // +1 porque las filas en Sheets empiezan en 1
     }
   }

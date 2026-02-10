@@ -1,3 +1,6 @@
+// Palabras clave que indican intención de borrar un registro
+const DELETE_KEYWORDS = ['borrar', 'borralo', 'eliminar', 'eliminalo', 'delete', 'quitar', 'sacalo', 'bórralo', 'eliminá', 'borrá'];
+
 /**
  * Configura el webhook de Telegram para recibir mensajes
  */
@@ -570,8 +573,7 @@ function processReplyToRecord(message, chatId) {
     
     // Detectar intención: borrar o editar
     const lowerText = userText.toLowerCase().trim();
-    const deleteKeywords = ['borrar', 'borralo', 'eliminar', 'eliminalo', 'delete', 'quitar', 'sacalo', 'bórralo', 'eliminá', 'borrá'];
-    const isDeleteIntent = deleteKeywords.some(keyword => lowerText.includes(keyword));
+    const isDeleteIntent = DELETE_KEYWORDS.some(keyword => lowerText.includes(keyword));
     
     if (isDeleteIntent) {
       // Borrar el registro
