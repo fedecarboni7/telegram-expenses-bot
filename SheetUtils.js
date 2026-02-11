@@ -31,11 +31,7 @@ function getUsdToArsRate() {
  */
 function logToExpenseSheet(data, timestamp, recordId) {
   try {
-    const sheet = SpreadsheetApp.openById(CONFIG.SHEET_ID).getSheetByName(CONFIG.EXPENSES_SHEET_NAME);
-    if (!sheet) {
-      throw new Error(`Hoja "${CONFIG.EXPENSES_SHEET_NAME}" no encontrada en la planilla`);
-    }
-
+    const sheet = getExpensesSheet();
     // Generar ID único si no se proporcionó
     if (!recordId) {
       recordId = Utilities.getUuid();
