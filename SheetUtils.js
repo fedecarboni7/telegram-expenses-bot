@@ -248,10 +248,31 @@ function getRecordDataById(recordId) {
     moneda: rowData[9] || 'ARS'
   };
   
-  // Para transferencias, extraer cuenta destino de la segunda fila
+  // Para transferencias, identificar origen/destino por el signo del monto (columna B):
+  // la fila con monto negativo es la cuenta origen y la positiva la cuenta destino,
+  // independientemente del orden en que aparezcan en la hoja.
   if (tipo === 'transferencia' && rows.length >= 2) {
+    const firstRow = rowData;
     const secondRow = sheet.getRange(rows[1], 1, 1, 11).getValues()[0];
-    data.cuenta_destino = secondRow[2];
+
+    // Determinar qué fila es origen (monto negativo) y cuál destino (monto positivo)
+    const firstAmount = firstRow[1];
+    const secondAmount = secondRow[1];
+
+    const originRow = firstAmount < 0 ? firstRow : secondRow;
+    const destRow = firstAmount < 0 ? secondRow : firstRow;
+
+    // Reasignar datos para que siempre se tomen desde la fila de origen
+    data.monto = Math.abs(originRow[1]);
+    data.cuenta = originRow[2];
+    data.categoria = originRow[3];
+    data.subcategoria = originRow[4];
+    data.descripcion = originRow[5];
+    data.fecha = originRow[0];
+    data.moneda = originRow[9] || 'ARS';
+
+    // Cuenta destino desde la fila de destino
+    data.cuenta_destino = destRow[2];
   }
   
   // Para cuotas, calcular monto total y número de cuotas
