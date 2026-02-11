@@ -262,6 +262,13 @@ function processAudioTranscription(audioBlob, mimeType, prompt) {
 
   const response = UrlFetchApp.fetch(generateUrl, options);
   if (response.getResponseCode() !== 200) {
+    if (typeof logError === 'function') {
+      logError(
+        'Error al transcribir audio con Gemini: ' +
+        'status=' + response.getResponseCode() + ', ' +
+        'body=' + response.getContentText()
+      );
+    }
     return null;
   }
 
