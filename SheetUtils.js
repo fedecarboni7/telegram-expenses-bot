@@ -218,75 +218,6 @@ function findRowsByRecordId(recordId, sheet) {
 }
 
 /**
- * Lee los datos de un registro desde la hoja por su recordId
- * @param {string} recordId - ID único del registro
- * @return {Object|null} Datos del registro o null si no se encontró
- */
-function getRecordDataById(recordId) {
-  const sheet = getExpensesSheet();
-  const rows = findRowsByRecordId(recordId, sheet);
-  
-  if (rows.length === 0) {
-    return null;
-  }
-  
-  // Leer la primera fila encontrada (columnas A-K: fecha, monto, cuenta, categoría, subcategoría, descripción, vacío, monto ARS, tipo, moneda, recordId)
-  const rowData = sheet.getRange(rows[0], 1, 1, 11).getValues()[0];
-  
-  // Mapear tipo de la planilla al formato interno
-  const tipoMap = { 'Gastos': 'gasto', 'Ingresos': 'ingreso', 'Transferencias': 'transferencia' };
-  const tipo = tipoMap[rowData[8]] || 'gasto';
-  
-  const data = {
-    tipo: tipo,
-    monto: Math.abs(rowData[1]),
-    cuenta: rowData[2],
-    categoria: rowData[3],
-    subcategoria: rowData[4],
-    descripcion: rowData[5],
-    fecha: rowData[0],
-    moneda: rowData[9] || 'ARS'
-  };
-  
-  // Para transferencias, identificar origen/destino por el signo del monto (columna B):
-  // la fila con monto negativo es la cuenta origen y la positiva la cuenta destino,
-  // independientemente del orden en que aparezcan en la hoja.
-  if (tipo === 'transferencia' && rows.length >= 2) {
-    const firstRow = rowData;
-    const secondRow = sheet.getRange(rows[1], 1, 1, 11).getValues()[0];
-
-    // Determinar qué fila es origen (monto negativo) y cuál destino (monto positivo)
-    const firstAmount = firstRow[1];
-    const secondAmount = secondRow[1];
-
-    const originRow = firstAmount < 0 ? firstRow : secondRow;
-    const destRow = firstAmount < 0 ? secondRow : firstRow;
-
-    // Reasignar datos para que siempre se tomen desde la fila de origen
-    data.monto = Math.abs(originRow[1]);
-    data.cuenta = originRow[2];
-    data.categoria = originRow[3];
-    data.subcategoria = originRow[4];
-    data.descripcion = originRow[5];
-    data.fecha = originRow[0];
-    data.moneda = originRow[9] || 'ARS';
-
-    // Cuenta destino desde la fila de destino
-    data.cuenta_destino = destRow[2];
-  }
-  
-  // Para cuotas, calcular monto total y número de cuotas
-  if (rows.length > 1 && tipo === 'gasto') {
-    data.cuotas = rows.length;
-    data.monto = Math.abs(rowData[1]) * rows.length;
-    // Limpiar "(Cuota X/Y)" de la descripción
-    data.descripcion = data.descripcion.replace(/\s*\(Cuota \d+\/\d+\)$/, '');
-  }
-  
-  return data;
-}
-
-/**
  * Elimina todas las filas asociadas a un ID de registro
  * @param {string} recordId - ID único del registro a eliminar
  * @return {boolean} True si se eliminaron filas, false si no se encontraron
@@ -305,25 +236,6 @@ function deleteRecordsByRecordId(recordId) {
     sheet.deleteRow(row);
   }
   
-  return true;
-}
-
-/**
- * Actualiza un registro existente en la hoja: elimina las filas antiguas y crea las nuevas
- * @param {string} recordId - ID único del registro a actualizar
- * @param {Object} data - Nuevos datos del registro
- * @param {number} timestamp - Marca de tiempo Unix
- * @return {boolean} True si se actualizó correctamente
- */
-function updateRecordInSheet(recordId, data, timestamp) {
-  // Primero eliminar las filas existentes
-  const deleted = deleteRecordsByRecordId(recordId);
-  if (!deleted) {
-    return false;
-  }
-  
-  // Crear los nuevos registros con el mismo recordId
-  logToExpenseSheet(data, timestamp, recordId);
   return true;
 }
 
