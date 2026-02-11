@@ -50,12 +50,6 @@ function doPost(e) {
       return;
     }
     
-    // Verificar si estamos en modo de edición
-    if (processEditMessage(message, chatId)) {
-      Logger.log("Edit mode message processed.");
-      return;
-    }
-    
     // Verificar si es un reply a un registro confirmado
     if (message.reply_to_message && processReplyToRecord(message, chatId)) {
       Logger.log("Reply to record processed.");
@@ -251,7 +245,7 @@ function handleCallbackQuery(callbackQuery) {
       chatId, 
       messageId, 
       formatExpenseForDisplay(savedData.data, displayDate) +
-      `\n\n<i>💡 Respondé a este mensaje para editarlo o borrarlo.</i>`
+      `\n\n<i>💡 Respondé a este mensaje para borrarlo.</i>`
     );
     
     // Guardar solo el recordId para futuros replies (los datos se leen desde la planilla)
@@ -264,15 +258,9 @@ function handleCallbackQuery(callbackQuery) {
       messageId, 
       "❌ Registro cancelado."
     );
-  } else if (callbackData.action === 'edit') {
-    // Iniciar flujo de edición
-    startEditFlow(chatId, messageId, savedData, callbackData.id);
   }
   
-  // Solo eliminar caché si confirmó o canceló (no para edición)
-  if (callbackData.action !== 'edit') {
-    cache.remove(cacheKey);
-  }
+  cache.remove(cacheKey);
 }
 
 /**
@@ -305,17 +293,13 @@ function sendConfirmationMessage(chatId, data, timestamp) {
   // Crear mensaje
   const message = formatExpenseForDisplay(data, displayDate, confirmPrefix);
   
-  // Botones de confirmar, editar y cancelar
+  // Botones de confirmar y cancelar
   const inlineKeyboard = {
     inline_keyboard: [
       [
         {
           text: "✅ Confirmar",
           callback_data: JSON.stringify({ action: 'confirm', id: expenseId })
-        },
-        {
-          text: "✏️ Editar",
-          callback_data: JSON.stringify({ action: 'edit', id: expenseId })
         },
         {
           text: "❌ Cancelar",
@@ -327,205 +311,6 @@ function sendConfirmationMessage(chatId, data, timestamp) {
   
   // Enviar mensaje con botones
   sendTelegramMessageWithButtons(chatId, message, inlineKeyboard);
-}
-
-/**
- * Inicia el flujo de edición de un gasto
- * @param {string} chatId - ID del chat
- * @param {number} messageId - ID del mensaje original
- * @param {Object} savedData - Datos del gasto guardados
- * @param {string} expenseId - ID único del gasto
- */
-function startEditFlow(chatId, messageId, savedData, expenseId) {
-  // Obtener fecha formateada
-  const displayDate = getFormattedDate(savedData.data, savedData.timestamp);
-  
-  // Crear prefijo de edición
-  const typeText = savedData.data.tipo === 'gasto' ? 'gasto' : 
-                  savedData.data.tipo === 'ingreso' ? 'ingreso' : 'transferencia';
-  const editPrefix = `✏️ <b>Editando ${typeText}:</b>`;
-  
-  // Actualizar el mensaje original para indicar que está en modo edición
-  editMessageText(
-    chatId,
-    messageId,
-    formatExpenseForDisplay(savedData.data, displayDate, editPrefix) + 
-    "\n\n<i>Por favor, enviá un mensaje indicando qué querés modificar.</i>"
-  );
-  
-  // Guardar información de que estamos en modo edición para este chat
-  const cache = CacheService.getUserCache();
-  cache.put(`edit_mode_${chatId}`, JSON.stringify({
-    expenseId: expenseId,
-    originalData: savedData
-  }), 3600); // 1 hora para completar la edición
-}
-
-/**
- * Procesa un mensaje de edición
- * @param {Object} message - Mensaje de Telegram
- * @param {string} chatId - ID del chat
- * @return {boolean} - True si se procesó como edición, false en caso contrario
- */
-function processEditMessage(message, chatId) {
-  const cache = CacheService.getUserCache();
-  const editModeJson = cache.get(`edit_mode_${chatId}`);
-  
-  if (!editModeJson) {
-    return false; // No estamos en modo edición
-  }
-  
-  const editMode = JSON.parse(editModeJson);
-  const originalData = editMode.originalData;
-  
-  try {
-    // Obtener la fecha actual para el prompt de Gemini
-    const today = new Date();
-    const currentDateString = Utilities.formatDate(today, Session.getScriptTimeZone(), "dd/MM/yyyy");
-    
-    // Procesar la edición con Gemini
-    let updatedData;
-    if (message.text) {
-      // Definir un prompt específico para edición
-      const editPrompt = `
-### TAREA:
-Tienes que actualizar un registro financiero existente. Identifica qué campos quiere modificar el usuario y actualiza ÚNICAMENTE los campos mencionados.
-
-### DATOS ACTUALES DEL REGISTRO:
-- **tipo**: ${originalData.data.tipo}
-- **monto**: ${originalData.data.monto}
-- **descripcion**: ${originalData.data.descripcion}
-- **categoria**: ${originalData.data.categoria}
-- **subcategoria**: ${originalData.data.subcategoria}
-- **cuenta**: ${originalData.data.cuenta}
-- **cuenta_destino**: ${originalData.data.cuenta_destino || 'No especificada'}
-- **fecha**: ${originalData.data.fecha}
-- **cuotas**: ${originalData.data.cuotas || 'No especificado'}
-- **moneda**: ${originalData.data.moneda || 'ARS'}
-
-### REGLAS DE MONEDA:
-- Por defecto siempre usar "ARS" (pesos argentinos)
-- Solo usar "USD" si el usuario menciona explícitamente dólares, USD, dólar, usd, dolares, o similar
-- Si no se menciona moneda → mantener el valor actual
-
-### REGLAS DE FECHA:
-- Hoy es ${currentDateString}.
-- Si menciona "ayer" → calcular fecha anterior
-- Si menciona "el lunes", "hace 3 días", etc. → calcular fecha específica
-
-### REGLAS DE CUOTAS:
-- Si menciona cuotas → actualizar el campo "cuotas"
-- Si no había cuotas especificadas y no se mencionan nuevas → no incluir el campo "cuotas"
-
-### CUENTAS DISPONIBLES:
-${accounts.join(', ')}
-
-### CATEGORÍAS DE GASTOS:
-${Object.entries(expense_categories).map(([cat, subcats]) => 
-  `**${cat}:**\n${subcats.map(subcat => `  - ${subcat.split(' > ')[1]}`).join('\n')}`
-).join('\n\n')}
-
-### CATEGORÍAS DE INGRESOS:
-${Object.entries(income_categories).map(([cat, subcats]) => 
-  `**${cat}:**\n${subcats.map(subcat => `  - ${subcat.split(' > ')[1]}`).join('\n')}`
-).join('\n\n')}
-
-### FORMATO DE SUBCATEGORÍA:
-- La subcategoría debe devolverse en formato "Categoría > Subcategoría"
-- Ejemplo: Si eliges "Nafta" de la categoría "Auto", devuelve "Auto > Nafta"
-
-### INSTRUCCIÓN DEL USUARIO:
-"${message.text}"
-
-### RESPUESTA REQUERIDA:
-Devuelve ÚNICAMENTE un JSON con TODOS los campos (modificados y sin modificar)`;
-      
-      updatedData = processTextWithGemini(message.text, editPrompt);
-    } else if (message.voice) {
-      const fileId = message.voice.file_id;
-      const audioBlob = getAudioBlob(fileId);
-      
-      // Definir un prompt específico para edición con audio
-      const editPrompt = `
-### TAREA:
-Tienes que actualizar un registro financiero existente. Identifica qué campos quiere modificar el usuario y actualiza ÚNICAMENTE los campos mencionados.
-
-### DATOS ACTUALES DEL REGISTRO:
-- **tipo**: ${originalData.data.tipo}
-- **monto**: ${originalData.data.monto}
-- **descripcion**: ${originalData.data.descripcion}
-- **categoria**: ${originalData.data.categoria}
-- **subcategoria**: ${originalData.data.subcategoria}
-- **cuenta**: ${originalData.data.cuenta}
-- **cuenta_destino**: ${originalData.data.cuenta_destino || 'No especificada'}
-- **fecha**: ${originalData.data.fecha}
-- **cuotas**: ${originalData.data.cuotas || 'No especificado'}
-- **moneda**: ${originalData.data.moneda || 'ARS'}
-
-### REGLAS DE MONEDA:
-- Por defecto siempre usar "ARS" (pesos argentinos)
-- Solo usar "USD" si el usuario menciona explícitamente dólares, USD, dólar, usd, dolares, o similar
-- Si no se menciona moneda → mantener el valor actual
-
-### REGLAS DE FECHA:
-- Hoy es ${currentDateString}.
-- Si menciona "ayer" → calcular fecha anterior
-- Si menciona "el lunes", "hace 3 días", etc. → calcular fecha específica
-
-### REGLAS DE CUOTAS:
-- Si menciona cuotas → actualizar el campo "cuotas"
-- Si no había cuotas especificadas y no se mencionan nuevas → no incluir el campo "cuotas"
-
-### CUENTAS DISPONIBLES:
-${accounts.join(', ')}
-
-### CATEGORÍAS DE GASTOS:
-${Object.entries(expense_categories).map(([cat, subcats]) => 
-  `**${cat}:**\n${subcats.map(subcat => `  - ${subcat.split(' > ')[1]}`).join('\n')}`
-).join('\n\n')}
-
-### CATEGORÍAS DE INGRESOS:
-${Object.entries(income_categories).map(([cat, subcats]) => 
-  `**${cat}:**\n${subcats.map(subcat => `  - ${subcat.split(' > ')[1]}`).join('\n')}`
-).join('\n\n')}
-
-### FORMATO DE SUBCATEGORÍA:
-- La subcategoría debe devolverse en formato "Categoría > Subcategoría"
-- Ejemplo: Si eliges "Nafta" de la categoría "Auto", devuelve "Auto > Nafta"
-
-### RESPUESTA REQUERIDA:
-Devuelve ÚNICAMENTE un JSON con TODOS los campos (modificados y sin modificar)`;
-      
-      updatedData = processAudioWithGemini(audioBlob, message.voice.mime_type, editPrompt);
-    }
-    
-    if (updatedData) {
-      const validation = validateData(updatedData);
-      if (validation.valid) {
-        // Guardar los datos actualizados
-        const cacheKey = `expense_${editMode.expenseId}`;
-        cache.put(cacheKey, JSON.stringify(updatedData), 21600); // 6 horas
-
-        // Eliminar el estado de edición
-        cache.remove(`edit_mode_${chatId}`);
-
-        // Enviar mensaje de confirmación con datos actualizados
-        sendConfirmationMessage(chatId, updatedData, updatedData.timestamp);
-
-        return true;
-      } else {
-        sendTelegramMessage(chatId, validation.error || "❌ No pude procesar correctamente tu edición. Por favor intenta nuevamente con información más clara.");
-        return true;
-      }
-    } else {
-      sendTelegramMessage(chatId, "❌ No pude procesar correctamente tu edición. Por favor intenta nuevamente con información más clara.");
-      return true;
-    }
-  } catch (error) {
-    logError('processEditMessage', error);
-    sendTelegramMessage(chatId, "❌ Ocurrió un error procesando tu edición. Por favor intenta de nuevo.");
-    return true;
-  }
 }
 
 /**
@@ -564,7 +349,7 @@ function processReplyToRecord(message, chatId) {
       return true;
     }
     
-    // Detectar intención: borrar o editar
+    // Detectar intención de borrar
     const lowerText = userText.toLowerCase().trim();
     const isDeleteIntent = DELETE_KEYWORDS.some(keyword => lowerText.includes(keyword));
     
@@ -572,112 +357,13 @@ function processReplyToRecord(message, chatId) {
       // Borrar el registro
       const deleted = deleteRecordsByRecordId(recordId);
       if (deleted) {
-        // Actualizar el mensaje original
-        editMessageText(chatId, repliedMessageId, "🗑️ <b>Registro eliminado.</b>");
         props.deleteProperty(`record_msg_${chatId}_${repliedMessageId}`);
         sendTelegramMessage(chatId, "✅ Registro eliminado correctamente de la planilla.");
       } else {
         sendTelegramMessage(chatId, "❌ No se encontró el registro en la planilla. Es posible que ya haya sido eliminado.");
       }
     } else {
-      // Leer los datos actuales del registro desde la planilla
-      const currentData = getRecordDataById(recordId);
-      if (!currentData) {
-        sendTelegramMessage(chatId, "❌ No se encontró el registro en la planilla. Es posible que ya haya sido eliminado.");
-        return true;
-      }
-      
-      // Interpretar como edición: usar Gemini para aplicar los cambios
-      const today = new Date();
-      const currentDateString = Utilities.formatDate(today, Session.getScriptTimeZone(), "dd/MM/yyyy");
-      
-      const editPrompt = `
-### TAREA:
-Tienes que actualizar un registro financiero existente. Identifica qué campos quiere modificar el usuario y actualiza ÚNICAMENTE los campos mencionados.
-
-### DATOS ACTUALES DEL REGISTRO:
-- **tipo**: ${currentData.tipo}
-- **monto**: ${currentData.monto}
-- **descripcion**: ${currentData.descripcion}
-- **categoria**: ${currentData.categoria}
-- **subcategoria**: ${currentData.subcategoria}
-- **cuenta**: ${currentData.cuenta}
-- **cuenta_destino**: ${currentData.cuenta_destino || 'No especificada'}
-- **fecha**: ${currentData.fecha}
-- **cuotas**: ${currentData.cuotas || 'No especificado'}
-- **moneda**: ${currentData.moneda || 'ARS'}
-
-### REGLAS DE MONEDA:
-- Por defecto siempre usar "ARS" (pesos argentinos)
-- Solo usar "USD" si el usuario menciona explícitamente dólares, USD, dólar, usd, dolares, o similar
-- Si no se menciona moneda → mantener el valor actual
-
-### REGLAS DE FECHA:
-- Hoy es ${currentDateString}.
-- Si menciona "ayer" → calcular fecha anterior
-- Si menciona "el lunes", "hace 3 días", etc. → calcular fecha específica
-
-### REGLAS DE CUOTAS:
-- Si menciona cuotas → actualizar el campo "cuotas"
-- Si no había cuotas especificadas y no se mencionan nuevas → no incluir el campo "cuotas"
-
-### CUENTAS DISPONIBLES:
-${accounts.join(', ')}
-
-### CATEGORÍAS DE GASTOS:
-${Object.entries(expense_categories).map(([cat, subcats]) => 
-  `**${cat}:**\n${subcats.map(subcat => `  - ${subcat.split(' > ')[1]}`).join('\n')}`
-).join('\n\n')}
-
-### CATEGORÍAS DE INGRESOS:
-${Object.entries(income_categories).map(([cat, subcats]) => 
-  `**${cat}:**\n${subcats.map(subcat => `  - ${subcat.split(' > ')[1]}`).join('\n')}`
-).join('\n\n')}
-
-### FORMATO DE SUBCATEGORÍA:
-- La subcategoría debe devolverse en formato "Categoría > Subcategoría"
-- Ejemplo: Si eliges "Nafta" de la categoría "Auto", devuelve "Auto > Nafta"
-
-### INSTRUCCIÓN DEL USUARIO:
-"${userText}"
-
-### RESPUESTA REQUERIDA:
-Devuelve ÚNICAMENTE un JSON con TODOS los campos (modificados y sin modificar)`;
-      
-      const updatedData = processTextWithGemini(userText, editPrompt);
-      
-      if (updatedData) {
-        const validation = validateData(updatedData);
-        if (validation.valid) {
-          // Editar descripción para que comience con mayúscula
-          if (updatedData.descripcion) {
-            updatedData.descripcion = updatedData.descripcion.charAt(0).toUpperCase() + updatedData.descripcion.slice(1);
-          }
-          
-          // Actualizar en la hoja
-          const timestamp = Math.floor(Date.now() / 1000);
-          const updated = updateRecordInSheet(recordId, updatedData, timestamp);
-          if (updated) {
-            const displayDate = getFormattedDate(updatedData, timestamp);
-            
-            // Actualizar el mensaje original
-            editMessageText(
-              chatId,
-              repliedMessageId,
-              formatExpenseForDisplay(updatedData, displayDate) +
-              `\n\n<i>💡 Respondé a este mensaje para editarlo o borrarlo.</i>`
-            );
-            
-            sendTelegramMessage(chatId, "✅ Registro actualizado correctamente.");
-          } else {
-            sendTelegramMessage(chatId, "❌ No se encontró el registro en la planilla. Es posible que ya haya sido eliminado.");
-          }
-        } else {
-          sendTelegramMessage(chatId, validation.error || "❌ No pude procesar correctamente tu edición. Por favor intenta nuevamente.");
-        }
-      } else {
-        sendTelegramMessage(chatId, "❌ No pude procesar correctamente tu edición. Por favor intenta nuevamente con información más clara.");
-      }
+      sendTelegramMessage(chatId, "❌ No entendí tu mensaje. Para borrar el registro, respondé con \"borrar\" o \"eliminar\".");
     }
     
     return true;

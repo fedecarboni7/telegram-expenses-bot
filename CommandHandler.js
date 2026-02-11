@@ -139,10 +139,9 @@ function sendHelpMessage(chatId) {
 /cuentas - Ver cuentas disponibles
 /ayuda - Ver esta ayuda
 
-💡 <b>Editar o borrar registros:</b>
-Respondé a un mensaje de registro confirmado para editarlo o borrarlo.
-• Para <b>borrar</b>: respondé con "borrar", "eliminar", etc.
-• Para <b>editar</b>: respondé indicando qué querés cambiar (ej: "cambiar monto a 5000", "la cuenta es Prex")`;
+💡 <b>Borrar registros:</b>
+Respondé a un mensaje de registro confirmado para borrarlo.
+• Para <b>borrar</b>: respondé con "borrar", "eliminar", etc.`;
 
   sendTelegramMessage(chatId, message);
 }
