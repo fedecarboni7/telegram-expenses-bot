@@ -139,9 +139,9 @@ function sendHelpMessage(chatId) {
 /cuentas - Ver cuentas disponibles
 /ayuda - Ver esta ayuda
 
-💡 <b>Borrar registros:</b>
-Respondé a un mensaje de registro confirmado para borrarlo.
-• Para <b>borrar</b>: respondé con "borrar", "eliminar", etc.`;
+💡 <b>Editar y borrar registros:</b>
+• Para <b>editar</b> antes de confirmar: usá el botón ✏️ Editar.
+• Para <b>borrar</b> después de confirmar: respondé al mensaje con "borrar", "eliminar", etc.`;
 
   sendTelegramMessage(chatId, message);
 }
