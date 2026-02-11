@@ -222,6 +222,54 @@ function findRowsByRecordId(recordId, sheet) {
 }
 
 /**
+ * Lee los datos de un registro desde la hoja por su recordId
+ * @param {string} recordId - ID único del registro
+ * @return {Object|null} Datos del registro o null si no se encontró
+ */
+function getRecordDataById(recordId) {
+  const sheet = getExpensesSheet();
+  const rows = findRowsByRecordId(recordId, sheet);
+  
+  if (rows.length === 0) {
+    return null;
+  }
+  
+  // Leer la primera fila encontrada (columnas A-K: fecha, monto, cuenta, categoría, subcategoría, descripción, vacío, monto ARS, tipo, moneda, recordId)
+  const rowData = sheet.getRange(rows[0], 1, 1, 11).getValues()[0];
+  
+  // Mapear tipo de la planilla al formato interno
+  const tipoMap = { 'Gastos': 'gasto', 'Ingresos': 'ingreso', 'Transferencias': 'transferencia' };
+  const tipo = tipoMap[rowData[8]] || 'gasto';
+  
+  const data = {
+    tipo: tipo,
+    monto: Math.abs(rowData[1]),
+    cuenta: rowData[2],
+    categoria: rowData[3],
+    subcategoria: rowData[4],
+    descripcion: rowData[5],
+    fecha: rowData[0],
+    moneda: rowData[9] || 'ARS'
+  };
+  
+  // Para transferencias, extraer cuenta destino de la segunda fila
+  if (tipo === 'transferencia' && rows.length >= 2) {
+    const secondRow = sheet.getRange(rows[1], 1, 1, 11).getValues()[0];
+    data.cuenta_destino = secondRow[2];
+  }
+  
+  // Para cuotas, calcular monto total y número de cuotas
+  if (rows.length > 1 && tipo === 'gasto') {
+    data.cuotas = rows.length;
+    data.monto = Math.abs(rowData[1]) * rows.length;
+    // Limpiar "(Cuota X/Y)" de la descripción
+    data.descripcion = data.descripcion.replace(/\s*\(Cuota \d+\/\d+\)$/, '');
+  }
+  
+  return data;
+}
+
+/**
  * Elimina todas las filas asociadas a un ID de registro
  * @param {string} recordId - ID único del registro a eliminar
  * @return {boolean} True si se eliminaron filas, false si no se encontraron

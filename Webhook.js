@@ -254,14 +254,9 @@ function handleCallbackQuery(callbackQuery) {
       `\n\n<i>💡 Respondé a este mensaje para editarlo o borrarlo.</i>`
     );
     
-    // Guardar la relación entre messageId y recordId/data para futuros replies
-    const replyData = {
-      recordId: recordId,
-      data: savedData.data,
-      timestamp: savedData.timestamp
-    };
+    // Guardar solo el recordId para futuros replies (los datos se leen desde la planilla)
     const props = PropertiesService.getUserProperties();
-    props.setProperty(`record_msg_${chatId}_${messageId}`, JSON.stringify(replyData));
+    props.setProperty(`record_msg_${chatId}_${messageId}`, recordId);
   } else if (callbackData.action === 'cancel') {
     // Actualizar el mensaje original
     editMessageText(
@@ -542,13 +537,11 @@ Devuelve ÚNICAMENTE un JSON con TODOS los campos (modificados y sin modificar)`
 function processReplyToRecord(message, chatId) {
   const repliedMessageId = message.reply_to_message.message_id;
   const props = PropertiesService.getUserProperties();
-  const recordDataJson = props.getProperty(`record_msg_${chatId}_${repliedMessageId}`);
+  const recordId = props.getProperty(`record_msg_${chatId}_${repliedMessageId}`);
   
-  if (!recordDataJson) {
+  if (!recordId) {
     return false; // No es un reply a un registro conocido
   }
-  
-  const recordData = JSON.parse(recordDataJson);
   
   try {
     // Determinar el texto del usuario (texto o voz)
@@ -577,7 +570,7 @@ function processReplyToRecord(message, chatId) {
     
     if (isDeleteIntent) {
       // Borrar el registro
-      const deleted = deleteRecordsByRecordId(recordData.recordId);
+      const deleted = deleteRecordsByRecordId(recordId);
       if (deleted) {
         // Actualizar el mensaje original
         editMessageText(chatId, repliedMessageId, "🗑️ <b>Registro eliminado.</b>");
@@ -587,6 +580,13 @@ function processReplyToRecord(message, chatId) {
         sendTelegramMessage(chatId, "❌ No se encontró el registro en la planilla. Es posible que ya haya sido eliminado.");
       }
     } else {
+      // Leer los datos actuales del registro desde la planilla
+      const currentData = getRecordDataById(recordId);
+      if (!currentData) {
+        sendTelegramMessage(chatId, "❌ No se encontró el registro en la planilla. Es posible que ya haya sido eliminado.");
+        return true;
+      }
+      
       // Interpretar como edición: usar Gemini para aplicar los cambios
       const today = new Date();
       const currentDateString = Utilities.formatDate(today, Session.getScriptTimeZone(), "dd/MM/yyyy");
@@ -596,16 +596,16 @@ function processReplyToRecord(message, chatId) {
 Tienes que actualizar un registro financiero existente. Identifica qué campos quiere modificar el usuario y actualiza ÚNICAMENTE los campos mencionados.
 
 ### DATOS ACTUALES DEL REGISTRO:
-- **tipo**: ${recordData.data.tipo}
-- **monto**: ${recordData.data.monto}
-- **descripcion**: ${recordData.data.descripcion}
-- **categoria**: ${recordData.data.categoria}
-- **subcategoria**: ${recordData.data.subcategoria}
-- **cuenta**: ${recordData.data.cuenta}
-- **cuenta_destino**: ${recordData.data.cuenta_destino || 'No especificada'}
-- **fecha**: ${recordData.data.fecha}
-- **cuotas**: ${recordData.data.cuotas || 'No especificado'}
-- **moneda**: ${recordData.data.moneda || 'ARS'}
+- **tipo**: ${currentData.tipo}
+- **monto**: ${currentData.monto}
+- **descripcion**: ${currentData.descripcion}
+- **categoria**: ${currentData.categoria}
+- **subcategoria**: ${currentData.subcategoria}
+- **cuenta**: ${currentData.cuenta}
+- **cuenta_destino**: ${currentData.cuenta_destino || 'No especificada'}
+- **fecha**: ${currentData.fecha}
+- **cuotas**: ${currentData.cuotas || 'No especificado'}
+- **moneda**: ${currentData.moneda || 'ARS'}
 
 ### REGLAS DE MONEDA:
 - Por defecto siempre usar "ARS" (pesos argentinos)
@@ -655,9 +655,10 @@ Devuelve ÚNICAMENTE un JSON con TODOS los campos (modificados y sin modificar)`
           }
           
           // Actualizar en la hoja
-          const updated = updateRecordInSheet(recordData.recordId, updatedData, recordData.timestamp);
+          const timestamp = Math.floor(Date.now() / 1000);
+          const updated = updateRecordInSheet(recordId, updatedData, timestamp);
           if (updated) {
-            const displayDate = getFormattedDate(updatedData, recordData.timestamp);
+            const displayDate = getFormattedDate(updatedData, timestamp);
             
             // Actualizar el mensaje original
             editMessageText(
@@ -666,14 +667,6 @@ Devuelve ÚNICAMENTE un JSON con TODOS los campos (modificados y sin modificar)`
               formatExpenseForDisplay(updatedData, displayDate) +
               `\n\n<i>💡 Respondé a este mensaje para editarlo o borrarlo.</i>`
             );
-            
-            // Actualizar los datos en propiedades para futuros edits
-            const newRecordData = {
-              recordId: recordData.recordId,
-              data: updatedData,
-              timestamp: recordData.timestamp
-            };
-            props.setProperty(`record_msg_${chatId}_${repliedMessageId}`, JSON.stringify(newRecordData));
             
             sendTelegramMessage(chatId, "✅ Registro actualizado correctamente.");
           } else {
