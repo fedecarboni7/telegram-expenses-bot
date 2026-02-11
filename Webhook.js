@@ -62,6 +62,12 @@ function doPost(e) {
       return;
     }
     
+    // Si es un reply a un mensaje del bot sin mapping, cortar el flujo
+    if (message.reply_to_message && message.reply_to_message.from && message.reply_to_message.from.is_bot) {
+      sendTelegramMessage(chatId, "❌ Este registro ya fue eliminado o no se puede modificar.");
+      return;
+    }
+    
     let structuredData;
     
     // Manejar mensajes de texto
@@ -250,8 +256,7 @@ function handleCallbackQuery(callbackQuery) {
     editMessageText(
       chatId, 
       messageId, 
-      formatExpenseForDisplay(savedData.data, displayDate) +
-      `\n\n<i>💡 Respondé a este mensaje para borrarlo.</i>`
+      formatExpenseForDisplay(savedData.data, displayDate)
     );
     
     // Guardar solo el recordId para futuros replies (los datos se leen desde la planilla)
