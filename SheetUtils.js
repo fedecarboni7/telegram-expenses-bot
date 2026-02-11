@@ -190,17 +190,22 @@ function findRowsByRecordId(recordId) {
   if (!sheet) {
     throw new Error(`Hoja "${CONFIG.EXPENSES_SHEET_NAME}" no encontrada en la planilla`);
   }
-  
-  const data = sheet.getDataRange().getValues();
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 1) {
+    return [];
+  }
+
+  // Leer solo la columna de IDs (columna K, índice base 1 = RECORD_ID_COLUMN_INDEX + 1)
+  const idColumnRange = sheet.getRange(1, RECORD_ID_COLUMN_INDEX + 1, lastRow, 1);
+  const idValues = idColumnRange.getValues();
   const rows = [];
-  
-  // Columna K es el índice 10
-  for (let i = 0; i < data.length; i++) {
-    if (data[i][RECORD_ID_COLUMN_INDEX] === recordId) {
+
+  for (let i = 0; i < idValues.length; i++) {
+    if (idValues[i][0] === recordId) {
       rows.push(i + 1); // +1 porque las filas en Sheets empiezan en 1
     }
   }
-  
   return rows;
 }
 
