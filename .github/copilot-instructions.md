@@ -8,7 +8,7 @@ This is a **Telegram bot for personal finance tracking**, built entirely with **
 
 - **Runtime**: Google Apps Script (V8 engine) — there is no `package.json`, Node.js, or npm.
 - **Deployment**: Via [clasp](https://github.com/google/clasp) (Command Line Apps Script). CI/CD is configured in `.github/workflows/deploy.yml` using GitHub Actions to push and deploy on any push to `master` (including merges and direct pushes).
-- **APIs**: Telegram Bot API, Google Gemini API (generative AI), Google Sheets API (via `SpreadsheetApp`).
+- **APIs**: Telegram Bot API, Google Gemini API (generative AI), Google Sheets via `SpreadsheetApp`.
 - **Language**: JavaScript (Google Apps Script flavor). No TypeScript, no module system — all files share a single global scope.
 - **Testing**: Manual only, via the Apps Script editor. There is no automated test framework. `Test.js` contains a simple manual test function.
 - **Linting/Building**: None. There are no linters, formatters, or build steps configured.
