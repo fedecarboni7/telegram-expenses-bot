@@ -181,14 +181,26 @@ function createSimpleRecord(sheet, data, baseDate, recordType, currency, usdRate
 }
 
 /**
- * Busca filas en la hoja de registros por su ID de registro (columna K)
- * @param {string} recordId - ID único del registro
- * @return {number[]} Array de números de fila donde se encontró el registro
+ * Obtiene la hoja de registros
+ * @return {Sheet} Hoja de registros
  */
-function findRowsByRecordId(recordId) {
+function getExpensesSheet() {
   const sheet = SpreadsheetApp.openById(CONFIG.SHEET_ID).getSheetByName(CONFIG.EXPENSES_SHEET_NAME);
   if (!sheet) {
     throw new Error(`Hoja "${CONFIG.EXPENSES_SHEET_NAME}" no encontrada en la planilla`);
+  }
+  return sheet;
+}
+
+/**
+ * Busca filas en la hoja de registros por su ID de registro (columna K)
+ * @param {string} recordId - ID único del registro
+ * @param {Sheet} [sheet] - Hoja de cálculo (se obtiene automáticamente si no se proporciona)
+ * @return {number[]} Array de números de fila donde se encontró el registro
+ */
+function findRowsByRecordId(recordId, sheet) {
+  if (!sheet) {
+    sheet = getExpensesSheet();
   }
 
   const lastRow = sheet.getLastRow();
@@ -215,12 +227,8 @@ function findRowsByRecordId(recordId) {
  * @return {boolean} True si se eliminaron filas, false si no se encontraron
  */
 function deleteRecordsByRecordId(recordId) {
-  const sheet = SpreadsheetApp.openById(CONFIG.SHEET_ID).getSheetByName(CONFIG.EXPENSES_SHEET_NAME);
-  if (!sheet) {
-    throw new Error(`Hoja "${CONFIG.EXPENSES_SHEET_NAME}" no encontrada en la planilla`);
-  }
-  
-  const rows = findRowsByRecordId(recordId);
+  const sheet = getExpensesSheet();
+  const rows = findRowsByRecordId(recordId, sheet);
   
   if (rows.length === 0) {
     return false;
